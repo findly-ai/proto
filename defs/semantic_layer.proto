@@ -1,0 +1,275 @@
+syntax = "proto3";
+
+package semantic_layer;
+
+message Dimension{
+    // The name of the dimension.
+    string name = 1;
+    // The description of the dimension.
+    string description = 2;
+    // The expression defining the dimension e.g. order_id
+    // Beware that there is no matching signature for operator BETWEEN for argument type DATETIME
+    // And we want to define a date range of interest for our queries
+    // Use DATE_TRUNC(CAST(dimension.name, DATETIME), DateGranularity) to ensure we can use WHERE date range correctly
+    string expr = 3;
+    // The type of the dimension, e.g. CATEGORICAL or TIME. 
+    DimensionType type = 4;
+    // The parameters of the dimension type.
+    DimensionTypeParams type_params = 5;
+    // The top n values of the dimension.
+    repeated string top_n_values = 6;
+    // The type of the values of the dimension, e.g. STRING, INTEGER, FLOAT, etc.
+    string value_type = 7;
+    // The data source names that the dimension is available in.
+    repeated string data_source_names = 8;
+    // The display name.
+    string display_name = 9;
+}
+
+message DimensionTypeParams{
+    // The date granularity of the dimension if it is a time dimension.
+    DateGranularity time_granularity = 1;
+
+    // Note for Time dimensions: For data sources with a measure involved, a primary time dimension is required (notice the is_primary: True parameter).
+    // Set the is_primary parameter to True to indicate the time dimension that is to be the primary, or preferred, time dimension for a measure (or metric).
+    // Example: Suppose you have a list of clients in a table with 2 date columns: one as the date of client creation in the system, and the other as the client contract closing date. In MetricFlow, you may specify both of these time dimensions in the data source, 
+    // and indicate which date column is the preferred time dimension via is_primary: True.
+    bool is_primary = 2;
+}
+
+// Once data sources are defined, metrics can be created out of measures!
+
+// Metrics can be defined in the same .yaml files as your data sources, or split into separate .yaml files into any other subdirectories (provided that these subdirectories are also within the same Transform git repo directory)
+
+// Parameters that are associated with metrics include:
+
+// name: Provide the reference name for the metric. This name must be unique amongst all metrics.
+// owners: Define the list of Technical Owners of this metric via email. 
+// type: Define the type of metric, which can be a measure (measure_proxy), ratio (ratio), SQL expression (expr), or cumulative (cumulative).
+message Metric{
+    // The unique identifier of the metric.
+    string id = 1;
+    // The name of the metric.
+    string name = 2;
+    // The description of the metric.
+    // The metric name and description should correctly translate the metric's expression. 
+    string description = 3;
+    // The expression defining the metric e.g. revenue would have 
+    // expression = transactions.price * transactions.quantity
+    // Shouldn't be used if type is MEASURE_PROXY.
+    // Always create simple expressions. If you need to create a complex expression, create a measure in the data source and use it in the metric.
+    // Two different metrics should not have the same expression. 
+    // e.g. x+y , x-y, x*y, x/y, x%y, x^y, x/y*z, x+y*z, x-y*z, x+y/z, x-y/z, etc.
+    string expression = 4;
+    // The id of the table view that the metric is defined on.
+    string view_id_of_table = 5;
+    // The name of the table view that the metric is defined on.
+    string table_name = 6;
+
+    // The measures of the metric.
+    // If type is MEASURE_PROXY, then this should be a list of exactly one measure.
+    // It should be included only measures that are defined in a data source.
+    // Two metrics of type MEASURE_PROXY cannot refer to the same measure.
+    repeated string measures = 7;
+
+    // Numerator and denominator are only used if type is RATIO. Don't use identifiers as numerator or denominator.
+    // It should be included only measures that are defined in a data source.
+    // We also probably don't want the numerator and denominator to be the same measure.
+    // Do not use another metric for the numerator or denominator. You should use measures present in a data source.
+    // The numerator of the metric if it is a ratio metric. It should be a measure.
+    string numerator = 8;
+    // The denominator of the metric if it is a ratio metric. It should be a measure.
+    string denominator = 9;
+
+    // The type of the metric, e.g. MEASURE_PROXY, CUMULATIVE, RATIO, etc.
+    // If the type is MEASURE_PROXY, the name of the metric must match the measure name in the expression
+    MetricType type = 10;
+
+    // The parameters of the metric type.
+    oneof cumulative_process {
+        // The window of the metric if it is a cumulative metric.
+        string window = 11;
+        // The grain of the metric if it is a cumulative metric.
+        string grain_to_date = 12;
+    }
+
+    // The value type of the metric, e.g. INTEGER, FLOAT, etc.
+    // Always set this field to METRIC_VALUE_TYPE_UNKNOWN = 0
+    MetricValueType value_type = 13;
+
+    string display_name = 14;
+
+    // If the metric is numeric or not.
+    bool is_numeric = 15;
+}
+
+message GeneratedSQLQueryParts {
+    // No logic for them to be string, there is a proper structure but we can
+    // use strings here as we can always generate this data from the mega_table_schema
+    string mega_table_with_statement = 1;
+    string mega_table_aggregated_with_statement = 2;
+    string generated_sql = 3;
+    // This is the raw sql we generate without the with statements, this is necessary
+    // to keep track of the original sql so we can use it for further analysis
+    string generated_sql_without_megatable_schema = 4;
+
+    // This is the where clause of the generated sql.
+    string where_clause = 5;
+
+    // This is the group by clause of the generated sql.
+    repeated string group_by_columns = 6;
+
+    // This is the metric expression of the generated sql.
+    repeated string metrics_expression = 7;
+
+    // This is the LIMIT clause of the generated sql.
+    string limit = 8;
+
+    // This is the ORDER BY clause of the generated sql.
+    string order_by = 9;
+
+    string date_where_clause = 10;
+
+    // The name of the metrics to be queried.
+    repeated string metrics = 11;
+
+    string having_clause = 12;
+
+    // The list of metrics selected by the pipeline,
+    //but are imcompatible for the request.
+    repeated string incompatible_metrics = 13;
+
+    // The list of dimensions selected by the pipeline,
+    //but are imcompatible for the request.
+    repeated string incompatible_dimensions = 14;
+    
+    // The date ranges to be queried.
+    string date_ranges = 15;
+
+    // The explanation of the generated sql.
+    string sql_explanation = 16;
+
+    // level and time_increment are important info for Facebook Ads insights
+    // https://developers.facebook.com/docs/marketing-api/reference/ad-account/insights/
+    string level = 17;
+    string time_increment = 18;
+
+    // A summary of the answer in human form.
+    string final_summary_answer = 19;
+}
+
+message DatasourceMetadata {
+
+    DataSourceLocation location = 1;
+
+    string property_id = 2; 
+
+    string property_name = 3;
+}
+
+enum DataSourceLocation {
+    DATA_SOURCE_LOCATION_UNKNOWN = 0;
+    SEMANTIC_LAYER = 1;
+    GA4 = 2;
+    FB_ADS = 3;
+}
+
+
+enum DateGranularity{
+    UNKNOWN = 0;
+    DAY = 1;
+    WEEK = 2;
+    MONTH = 3;
+    QUARTER = 4;
+    YEAR = 5;
+}
+
+enum Aggregation{
+    AGGREGATION_UNKNOWN = 0;
+    SUM = 1;
+    SUM_BOOLEAN = 2;
+    COUNT_DISTINCT = 3;
+    MIN = 4;
+    MAX = 5;
+    AVERAGE = 6;
+    MEDIAN = 7;
+}
+
+enum DimensionType{
+    DIMENSION_UNKNOWN = 0;
+    // Category dimensions allow metrics to be grouped by different "category" slices and dices, such as product type, color, or geographical area. 
+    // These may point to existing columns in the data table, or be calculated using a SQL expression with the expr parameter.
+    CATEGORICAL = 1;
+    // Time dimensions are used to aggregate metrics against different levels of time granularity. 
+    // Current granularities supported by MetricFlow include day, week, month, quarter, and year (see the parameter time_granularity for further details).
+    // An Aggregation time dimension for measures must be set! This should either be set directly on the measure specification in the model, or else defaulted to the primary time dimension in the data source containing the measure.
+    TIME = 2;
+    
+    // Here are the possible types for FB Ads Dimensions
+    FB_ADS_FIELD = 3;
+    FB_ADS_BREAKDOWN = 4;
+    FB_ADS_ACTION_BREAKDOWN = 5;
+    FB_ADS_SUMMARY_ACTION_BREAKDOWN =6;
+    
+}
+
+// Based on https://docs.getdbt.com/docs/build/metrics-
+// Only MEASURE_PROXY and RATIO are supported for now. Don't use the other types.
+enum MetricType{
+    METRIC_UNKNOWN = 0;
+    // Measure proxies are metrics that point directly to a measure (you may think of the measure proxy as a function that takes only ONE measure as the input).
+    // Note that if a measure has already been defined in a data source with the create_metric: True parameter, you do not need to re-define a metric for the measure, and you can simply use the measure itself. 
+    // However, if you would like to include a constraint on top of the measure, you will need to create a measure proxy.
+    // For example, if you would like to create a metric that only includes orders with a price greater than 100, you can create a measure proxy with the constraint price > 100.
+    // If using a measure proxy, you must specify the measure in the measures parameter. Don't use the expression field as it will be ignored.
+    MEASURE_PROXY = 1;
+    // Cumulative metrics aggregate a measure over a given window. 
+    // Note that if no window is specified, the window would accumulate the measure over all time.
+    CUMULATIVE = 2;
+    // Ratio metrics involve a numerator measure and a denominator measure. 
+    // Note that if an optional constraint string is applied, the constraint is applied to both the numerator and denominator.
+    RATIO = 3;
+    DERIVED = 4;
+    // When you are building a metric that involves a SQL expression of multiple measures, you can use an expression metric.
+    SQL_EXPRESSION = 5;
+}
+
+// The value type of the metric, e.g. INTEGER, FLOAT, etc.
+// Based on https://developers.google.com/analytics/devguides/reporting/data/v1/rest/v1beta/MetricType.
+// And also on https://developers.facebook.com/docs/marketing-api/reference/ad-account/insights/.
+enum MetricValueType{
+    // These are the types from GA4
+    METRIC_VALUE_TYPE_UNKNOWN = 0;
+    // Integer type.
+    METRIC_VALUE_TYPE_INTEGER = 1;
+    // Floating point type.
+    METRIC_VALUE_TYPE_FLOAT = 2;
+    // A duration of seconds; a special floating point type.
+    METRIC_VALUE_TYPE_SECONDS = 3;
+    // A duration in milliseconds; a special floating point type.
+    METRIC_VALUE_TYPE_MILLISECONDS = 4;
+    // A duration in minutes; a special floating point type.
+    METRIC_VALUE_TYPE_MINUTES = 5;
+    // A duration in hours; a special floating point type.
+    METRIC_VALUE_TYPE_HOURS = 6;
+    // A custom metric of standard type; a special floating point type.
+    METRIC_VALUE_TYPE_STANDARD = 7;
+    // An amount of money; a special floating point type.
+    METRIC_VALUE_TYPE_CURRENCY = 8;
+    // A length in feet; a special floating point type.
+    METRIC_VALUE_TYPE_FEET = 9;
+    // A length in miles; a special floating point type.
+    METRIC_VALUE_TYPE_MILES = 10;
+    // A length in meters; a special floating point type.
+    METRIC_VALUE_TYPE_METERS = 11;
+    // A length in kilometers; a special floating point type.
+    METRIC_VALUE_TYPE_KILOMETERS = 12;
+
+    // Now, these are the types from FB ADS.
+    METRIC_VALUE_TYPE_STRING = 13;
+    METRIC_VALUE_TYPE_NUMERIC_STRING = 14;
+    // A single action for a Statistics result -> https://github.com/facebook/facebook-python-business-sdk/blob/main/facebook_business/adobjects/adsactionstats.py
+    METRIC_VALUE_TYPE_LIST_ADS_ACTION_STATS = 15;
+    METRIC_VALUE_TYPE_LIST_ADS_INSIGHTS_DDA_RESULT = 16;
+    METRIC_VALUE_TYPE_LIST_ADS_HISTOGRAM_STATS = 17;
+}
